@@ -8,16 +8,22 @@ import collections
 import glob
 from itertools import chain
 import numpy as np
-import tensorflow as tf
+# import tensorflow as tf
 import matplotlib.pyplot as plt
 import pandas as pd
 np.random.seed(1)
 
+import sys, os
+sys.path.append('..')
+sys.path.append('../../')
+import config as conf
 
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 # In[86]:
 
 
-files = glob.glob('./res/writer_user_sentences_keyword.txt')
+files = glob.glob(conf.data + 'writer_user_sentences_keyword.txt')
 
 words = []
 for f in files:
@@ -48,7 +54,7 @@ sentences_df['words_num'] = sentences_df[0].apply(lambda x : len(x.split()))
 # In[89]:
 
 
-len(set(sum(sentences_df.head(3000)['words_list'].tolist(), [])))
+len(set(sum(sentences_df.head(3000)['words_list'].tolist(), []))) # 전체 단어 수 (118396개)
 
 
 # In[90]:
@@ -68,16 +74,17 @@ sentences_df_indexed = sentences_df.reset_index().set_index('user')
 
 vocabulary_size = 400000
 
+# 전체 문장의 단어를 고유한 숫자값으로 변환
 def build_dataset(sentences):
     words = ''.join(sentences).split()
     count = [['UNK', -1]]
-    count.extend(collections.Counter(words).most_common(vocabulary_size - 1))
-    dictionary = dict()
+    count.extend(collections.Counter(words).most_common(vocabulary_size - 1)) # 각 단어의 출현 빈도 계산
+    dictionary = dict() # 단어의 출현 빈도 순으로 인덱싱한 결과 (단어의 순위값과 단어를 매핑함) 
     for word, _ in count:
         dictionary[word] = len(dictionary)
     
     unk_count = 0
-    sent_data = []
+    sent_data = [] # 문장의 각 단어를 고유한 숫자로 변환한 최종 결과
     for sentence in sentences:
         data = []
         for word in sentence.split():
@@ -102,17 +109,17 @@ print('Sample data', data[:2])
 # In[48]:
 
 
-skip_window = 5
+skip_window = 5 # 즉 단어 앞뒤 5개의 단어를 이용함
 instances = 0
 
 # Pad sentence with skip_windows
 for i in range(len(data)):
-    data[i] = [vocabulary_size]*skip_window+data[i]+[vocabulary_size]*skip_window
+    data[i] = [vocabulary_size]*skip_window+data[i]+[vocabulary_size]*skip_window # 앞뒤 skip_window만큼 넣어줌
 
 # Check how many training samples that we get    
 for sentence  in data:
     instances += len(sentence)-2*skip_window
-print(instances)
+print(instances) # 인스턴수 개수 - 380만개
 
 
 # In[49]:
@@ -126,13 +133,13 @@ k = 0
 for doc_id, sentence  in enumerate(data):
     for i in range(skip_window, len(sentence)-skip_window):
         context[k] = sentence[i-skip_window:i+skip_window+1] # Get surrounding words
-        labels[k] = sentence[i] # Get target variable
+        labels[k] = sentence[i] # Get target variable (중간 단어를 label로 저장
         doc[k] = doc_id
         k += 1
         
 context = np.delete(context,skip_window,1) # delete the middle word        
         
-shuffle_idx = np.random.permutation(k)
+shuffle_idx = np.random.permutation(k) # 셔플링
 labels = labels[shuffle_idx]
 doc = doc[shuffle_idx]
 context = context[shuffle_idx]
@@ -143,9 +150,9 @@ context = context[shuffle_idx]
 
 batch_size = 256
 context_window = 2*skip_window
-embedding_size = 50 # Dimension of the embedding vector.
-softmax_width = embedding_size # +embedding_size2+embedding_size3
-num_sampled = 5 # Number of negative examples to sample.
+embedding_size = 50 # Dimension of the embedding vector. 임베딩 사이즈
+softmax_width = embedding_size # +embedding_size2+embedding_size3 , 값을 0~1로 만들기 위해 소프트맥스 사용할것
+num_sampled = 5 # Number of negative examples to sample. (네가티브 샘플링)
 sum_ids = np.repeat(np.arange(batch_size),context_window)
 
 len_docs = len(data)
@@ -193,6 +200,7 @@ with graph.as_default(): # , tf.device('/cpu:0')
 # Chunk the data to be passed into the tensorflow Model
 ###########################
 data_idx = 0
+# 배치 사이즈만큼 배치 만들기
 def generate_batch(batch_size):
     global data_idx
 
@@ -234,13 +242,14 @@ with tf.Session(graph=graph) as session:
             if step > 0:
                 average_loss = average_loss / step_delta
             # The average loss is an estimate of the loss over the last 2000 batches.
+            # 평균 손실은 마지막 2000배치에 대한 추정값
             print('Average loss at step %d: %f' % (step, average_loss))
             average_loss = 0
     save_path = tf.train.Saver().save(session, "./model/doc2vec_model")    
-    # restore model
+    # restore model (모델 읽어옴)
     #tf.train.Saver().restore(session, "./model/doc2vec_model")  
     
-    # Get the weights to save for later
+    # 추후 저장을 위해 가중치 가져옴
     final_word_embeddings = word_embeddings.eval()
     final_word_embeddings_out = softmax_weights.eval()
     final_doc_embeddings = normalized_doc_embeddings.eval()

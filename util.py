@@ -2,7 +2,10 @@
 import os
 import config as conf
 
-data_root = './res'
+import config as conf
+
+data_root = conf.data_root
+
 
 def iterate_data_files(from_dtm, to_dtm):
     from_dtm, to_dtm = map(str, [from_dtm, to_dtm])
